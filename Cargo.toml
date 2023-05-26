@@ -1,0 +1,8 @@
+[workspace]
+
+members = [
+    "echo",
+    "unique-ids",
+    "common",
+    "broadcast",
+]

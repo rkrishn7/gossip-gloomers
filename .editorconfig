@@ -1,0 +1,27 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# top-most EditorConfig file
+root = true
+
+[*]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# Markdown syntax specifies that trailing whitespaces can be meaningful,
+# so let’s not trim those. e.g. 2 trailing spaces = linebreak (<br />)
+# See https://daringfireball.net/projects/markdown/syntax#p
+[*.md]
+trim_trailing_whitespace = false
+
+# Disable trailing whitespace removal in diff files,
+# where whitespace is meaningful
+[*.diff]
+trim_trailing_whitespace = false
+
+# Standard tab width is 4 for Rust
+[*.rs]
+indent_size = 4
