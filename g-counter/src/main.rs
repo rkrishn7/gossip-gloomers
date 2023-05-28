@@ -1,41 +1,33 @@
-use std::collections::{BTreeSet, HashMap};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use common::message::{Message, MessageBody, MessageId};
 use common::node::{Node, NodeId};
 use common::runtime::Runtime;
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
-pub enum MessagePayload {
-    Broadcast {
-        message: i32,
-    },
-    BroadcastOk,
+enum MessagePayload {
     Read,
-    ReadOk {
-        messages: Vec<i32>,
-    },
-    Topology {
-        topology: HashMap<String, Vec<String>>,
-    },
-    TopologyOk,
+    ReadOk { value: u32 },
+    Add { delta: u32 },
+    AddOk,
 }
 
 #[derive(Debug, Clone)]
-struct BroadcastNode {
+struct GCounterNode {
     id: NodeId,
-    seen: Vec<i32>,
-    topology: Option<HashMap<NodeId, Vec<NodeId>>>,
+    counter: u32,
+    neighbors: Vec<NodeId>,
     curr_msg_id: MessageId,
     tx: UnboundedSender<Message<MessagePayload>>,
     unacked_messages: Arc<Mutex<BTreeSet<MessageId>>>,
 }
 
-impl<'de> Node<'de> for BroadcastNode {
+impl<'de> Node<'de> for GCounterNode {
     type Payload = MessagePayload;
 
     fn handle_message(&mut self, message: Message<Self::Payload>) {
@@ -44,32 +36,18 @@ impl<'de> Node<'de> for BroadcastNode {
         }
 
         match message.body.payload {
-            MessagePayload::Broadcast { message: msg } => {
-                if self.seen.contains(&msg) {
-                    return;
-                }
+            MessagePayload::Add { delta } => {
+                self.counter += delta;
+                let msg_id = self.next_msg_id();
 
-                self.seen.push(msg);
-
-                let node_neighbors = self
-                    .topology
-                    .as_ref()
-                    .expect("topology unset")
-                    .get(&self.id)
-                    .expect("unknown node")
-                    .clone();
-
-                for neighbor in node_neighbors {
-                    if message.src == neighbor {
-                        continue;
-                    }
-
+                for neighbor in self.neighbors.clone() {
                     let msg_id = self.next_msg_id();
-                    let tx = self.tx.clone();
                     let node_id = self.id.clone();
+                    let tx = self.tx.clone();
                     let unacked_msgs = Arc::clone(&self.unacked_messages);
+
                     {
-                        unacked_msgs
+                        self.unacked_messages
                             .lock()
                             .expect("poisoned lock")
                             .extend(std::iter::once(msg_id));
@@ -90,7 +68,7 @@ impl<'de> Node<'de> for BroadcastNode {
                                 body: MessageBody {
                                     msg_id: Some(msg_id),
                                     in_reply_to: None,
-                                    payload: MessagePayload::Broadcast { message: msg },
+                                    payload: MessagePayload::Add { delta },
                                 },
                             })
                             .expect("failed sending message");
@@ -100,8 +78,6 @@ impl<'de> Node<'de> for BroadcastNode {
                     });
                 }
 
-                let msg_id = self.next_msg_id();
-
                 self.tx
                     .send(Message {
                         src: self.id.clone(),
@@ -109,32 +85,13 @@ impl<'de> Node<'de> for BroadcastNode {
                         body: MessageBody {
                             msg_id: Some(msg_id),
                             in_reply_to: message.body.msg_id,
-                            payload: MessagePayload::BroadcastOk,
-                        },
-                    })
-                    .expect("failed sending message");
-            }
-            MessagePayload::Topology { topology } => {
-                self.topology = Some(topology);
-
-                let msg_id = self.next_msg_id();
-
-                self.tx
-                    .send(Message {
-                        src: self.id.clone(),
-                        dest: message.src,
-                        body: MessageBody {
-                            msg_id: Some(msg_id),
-                            in_reply_to: message.body.msg_id,
-                            payload: MessagePayload::TopologyOk,
+                            payload: MessagePayload::AddOk,
                         },
                     })
                     .expect("failed sending message");
             }
             MessagePayload::Read => {
-                let msg_id = { self.next_msg_id() };
-
-                let seen = &self.seen;
+                let msg_id = self.next_msg_id();
 
                 self.tx
                     .send(Message {
@@ -144,31 +101,33 @@ impl<'de> Node<'de> for BroadcastNode {
                             msg_id: Some(msg_id),
                             in_reply_to: message.body.msg_id,
                             payload: MessagePayload::ReadOk {
-                                messages: seen.clone(),
+                                value: self.counter,
                             },
                         },
                     })
                     .expect("failed sending message");
             }
-            MessagePayload::BroadcastOk => {
-                self.unacked_messages
-                    .lock()
-                    .expect("poisoned lock")
-                    .remove(&message.body.in_reply_to.unwrap());
+            MessagePayload::AddOk => {
+                if let Some(in_reply_to) = &message.body.in_reply_to {
+                    self.unacked_messages
+                        .lock()
+                        .expect("poisoned lock")
+                        .remove(in_reply_to);
+                }
             }
-            MessagePayload::ReadOk { .. } | MessagePayload::TopologyOk => {}
+            MessagePayload::ReadOk { .. } => {}
         }
     }
 
     fn from_init(
         node_id: NodeId,
-        _neighbors: Vec<NodeId>,
+        neighbors: Vec<NodeId>,
         tx: tokio::sync::mpsc::UnboundedSender<Message<Self::Payload>>,
     ) -> Self {
         Self {
             id: node_id,
-            seen: vec![],
-            topology: None,
+            counter: Default::default(),
+            neighbors,
             curr_msg_id: Default::default(),
             unacked_messages: Arc::new(Mutex::new(BTreeSet::new())),
             tx,
@@ -183,9 +142,8 @@ impl<'de> Node<'de> for BroadcastNode {
 
 #[tokio::main]
 async fn main() {
-    console_subscriber::init();
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    Runtime::start::<BroadcastNode, _, _>(stdin, stdout).await;
+    Runtime::start::<GCounterNode, _, _>(stdin, stdout).await;
 }

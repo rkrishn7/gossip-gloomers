@@ -1,16 +1,27 @@
-use common::message::{Message, MessageBody, MessageId, MessagePayload};
+use common::message::{Message, MessageBody, MessageId};
 use common::node::{Node, NodeId};
 use common::runtime::Runtime;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+enum MessagePayload {
+    Generate,
+    GenerateOk { id: String },
+}
 
 struct UniqueIdNode {
     id: NodeId,
     curr_msg_id: MessageId,
-    tx: UnboundedSender<Message>,
+    tx: UnboundedSender<Message<MessagePayload>>,
 }
 
-impl Node for UniqueIdNode {
-    fn handle_message(&mut self, message: common::message::Message) {
+impl<'de> Node<'de> for UniqueIdNode {
+    type Payload = MessagePayload;
+
+    fn handle_message(&mut self, message: Message<Self::Payload>) {
         match message.body.payload {
             MessagePayload::Generate => {
                 let msg_id = self.next_msg_id();
@@ -32,14 +43,13 @@ impl Node for UniqueIdNode {
                     .expect("failed sending generate reply");
             }
             MessagePayload::GenerateOk { .. } => {}
-            _ => unimplemented!(),
         }
     }
 
     fn from_init(
         node_id: NodeId,
         _neighbors: Vec<NodeId>,
-        tx: tokio::sync::mpsc::UnboundedSender<common::message::Message>,
+        tx: tokio::sync::mpsc::UnboundedSender<Message<MessagePayload>>,
     ) -> Self {
         Self {
             id: node_id,

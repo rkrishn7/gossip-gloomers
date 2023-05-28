@@ -5,4 +5,5 @@ members = [
     "unique-ids",
     "common",
     "broadcast",
+    "g-counter",
 ]

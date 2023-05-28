@@ -1,5 +1,5 @@
 [package]
-name = "broadcast"
+name = "g-counter"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,6 +7,5 @@ edition = "2021"
 
 [dependencies]
 common = { path = "../common" }
-tokio = { version = "1", features = ["full", "tracing"] }
-console-subscriber = "0.1.9"
+tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }

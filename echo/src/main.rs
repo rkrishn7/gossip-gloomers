@@ -1,18 +1,30 @@
-use common::message::{Message, MessageBody, MessageId, MessagePayload};
+use common::message::{Message, MessageBody, MessageId};
 use common::node::{Node, NodeId};
 use common::runtime::Runtime;
 use tokio::sync::mpsc::UnboundedSender;
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+enum MessagePayload {
+    Echo { echo: String },
+    EchoOk { echo: String },
+}
+
 struct EchoNode {
     id: NodeId,
     curr_msg_id: MessageId,
-    tx: UnboundedSender<Message>,
+    tx: UnboundedSender<Message<MessagePayload>>,
 }
 
-impl Node for EchoNode {
-    fn handle_message(&mut self, message: common::message::Message) {
+impl<'a> Node<'a> for EchoNode {
+    type Payload = MessagePayload;
+
+    fn handle_message(&mut self, message: common::message::Message<Self::Payload>) {
         match message.body.payload {
-            MessagePayload::Echo { echo } => {
+            Self::Payload::Echo { echo } => {
                 let next_msg_id = self.next_msg_id();
 
                 self.tx
@@ -22,19 +34,19 @@ impl Node for EchoNode {
                         body: MessageBody {
                             msg_id: Some(next_msg_id),
                             in_reply_to: message.body.msg_id,
-                            payload: MessagePayload::EchoOk { echo },
+                            payload: Self::Payload::EchoOk { echo },
                         },
                     })
                     .expect("failed sending message");
             }
-            _ => unimplemented!(),
+            Self::Payload::EchoOk { .. } => {}
         }
     }
 
     fn from_init(
         node_id: NodeId,
         _neighbors: Vec<NodeId>,
-        tx: tokio::sync::mpsc::UnboundedSender<common::message::Message>,
+        tx: tokio::sync::mpsc::UnboundedSender<common::message::Message<Self::Payload>>,
     ) -> Self {
         Self {
             id: node_id,

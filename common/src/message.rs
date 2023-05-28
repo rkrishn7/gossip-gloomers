@@ -5,18 +5,18 @@ use serde::{Deserialize, Serialize};
 pub type MessageId = u64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
+pub struct Message<P> {
     pub src: String,
     pub dest: String,
-    pub body: MessageBody,
+    pub body: MessageBody<P>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MessageBody {
+pub struct MessageBody<P> {
     pub msg_id: Option<MessageId>,
     pub in_reply_to: Option<MessageId>,
     #[serde(flatten)]
-    pub payload: MessagePayload,
+    pub payload: P,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,9 +45,14 @@ pub enum MessagePayload {
     Read,
     ReadOk {
         messages: Vec<i32>,
+        // value: u32,
     },
     Topology {
         topology: HashMap<String, Vec<String>>,
     },
     TopologyOk,
+    Add {
+        delta: u32,
+    },
+    AddOk,
 }

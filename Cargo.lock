@@ -100,6 +100,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "console-subscriber",
+ "serde",
  "tokio",
 ]
 
@@ -201,6 +202,7 @@ name = "echo"
 version = "0.1.0"
 dependencies = [
  "common",
+ "serde",
  "tokio",
 ]
 
@@ -285,6 +287,15 @@ dependencies = [
  "futures-task",
  "pin-project-lite",
  "pin-utils",
+]
+
+[[package]]
+name = "g-counter"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "serde",
+ "tokio",
 ]
 
 [[package]]
@@ -1079,6 +1090,7 @@ name = "unique-ids"
 version = "0.1.0"
 dependencies = [
  "common",
+ "serde",
  "tokio",
 ]
 
